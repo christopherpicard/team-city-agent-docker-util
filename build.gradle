@@ -1,0 +1,65 @@
+plugins {
+    id 'com.bmuschko.docker-remote-api' version '9.4.0'
+    id 'nu.studer.credentials' version '3.0'
+}
+
+import com.bmuschko.gradle.docker.tasks.image.*
+import org.codehaus.groovy.runtime.GStringImpl
+import java.text.SimpleDateFormat
+
+ext {
+    jdkVersion = '21'
+    jdkFullVersion = '21.0.3'
+    timestamp = new SimpleDateFormat("MMddyyyy_HHmmss").format(new Date())
+    imageTag = ":${timestamp}" as GStringImpl
+    dockerRegistryHost = 'hub.docker.com/'
+    dockerRegistryUrl = 'https://hub.docker.com'
+    jdkSource = 'jetbrains/teamcity-agent'
+    dockerUsername = credentials.forKey('docker_username')
+    dockerPassword = credentials.forKey('docker_password')
+}
+
+tasks.register('pullTeamCityAgentImage', DockerPullImage) {
+    image.set("${jdkSource}:latest")
+    registryCredentials.with {
+        username.set(dockerUsername)
+        password.set(dockerPassword)
+        url.set("${dockerRegistryUrl}")
+    }
+}
+
+tasks.register('copyJdk') {
+    doLast {
+        copy {
+            from "${rootDir}/jdks/corretto-${jdkFullVersion}"
+            into "${layout.buildDirectory.asFile.get()}/docker/team-city/tmp/corretto-${jdkFullVersion}"
+        }
+    }
+}
+
+tasks.register('createDockerfile', Dockerfile) {
+    from("${jdkSource}:latest")
+    user('buildagent')
+    instruction("RUN echo '\\nenv.JDK_${jdkVersion}_0_x64=/opt/java/corretto-${jdkFullVersion}' >> /opt/buildagent/conf/buildAgent.dist.properties")
+    copyFile("/tmp/corretto-${jdkFullVersion}", "/opt/java/corretto-${jdkFullVersion}")
+    destFile.set(new File("${layout.buildDirectory.asFile.get()}/docker/team-city/Dockerfile"))
+}
+
+tasks.register('buildImage', DockerBuildImage) {
+    images.add("team-city-agent-java${jdkVersion}")
+    images.add("team-city-agent-java${jdkVersion}${imageTag}")
+    dockerFile.set(file('build/docker/team-city/Dockerfile'))
+    inputDir.set(file('build/docker/team-city'))
+    noCache.set(true)
+}
+
+tasks.register('clean') {
+    doLast {
+        delete "${layout.buildDirectory.asFile.get()}"
+        delete "../Dockerfile"
+        delete "../tmp"
+    }
+}
+
+createDockerfile.dependsOn('copyJdk')
+buildImage.dependsOn('createDockerfile', 'pullTeamCityAgentImage')

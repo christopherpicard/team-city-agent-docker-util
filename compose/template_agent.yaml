@@ -1,0 +1,6 @@
+services:
+  team-city-agent-java{java-version}:
+    container_name: team-city-agent-{java-version}
+    image: "team-city-agent-{java-version}"
+    environment:
+      SERVER_URL: http://{team-city-server-host}:8111

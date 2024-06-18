@@ -1,0 +1,2 @@
+//file:noinspection GrUnresolvedAccess
+rootProject.name = 'team-city-agent-docker-util'
